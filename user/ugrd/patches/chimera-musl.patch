@@ -1,0 +1,92 @@
+--- a/src/ugrd/base/core.py
++++ b/src/ugrd/base/core.py
+@@ -405,7 +405,15 @@
+         self.logger.info(f"Detected musl search path: {c_(musl_path, 'green')}")
+         self["dependencies"] = musl_path
+     elif self["musl_libc"]:
+-        raise AutodetectError("Musl libc is enabled, but the musl search path was not found: %s" % musl_path)
++        fallback_paths = ["/lib", "/usr/lib"]
++        self.logger.warning(
++            "Musl search path is absent: %s; using fallback library paths: %s",
++            musl_path,
++            ":".join(fallback_paths),
++        )
++        for path in fallback_paths:
++            if path not in self["library_paths"]:
++                self["library_paths"] = path
+ 
+ 
+ @unset("musl_libc", "Skipping ld.so.cache regeneration, musl_libc is enabled.", log_level=30)
+--- a/examples/example.toml
++++ b/examples/example.toml
+@@ -54,8 +54,9 @@
+ # ugrd is designed for merged-usr systems. If using a split-usr system, automatic symlink creation can be disabled:
+ #merge_usr = false
+ 
+-# on systems using glibc in the userspace, libgcc is often required. If it's not necessary, pulling it can be diabled with:
+-#find_libgcc = false
++# Chimera Linux uses musl, so libgcc autodetection and ld.so.cache generation are disabled.
++find_libgcc = false
++musl_libc = true
+ 
+ # By default, ugrd will keep retrying to mount base mounts and the rootfs, unless space is pressed
+ # The default timeout between attempts is 1s, and the default number of retries is infinite
+--- /dev/null
++++ b/tests/test_musl.py
+@@ -0,0 +1,56 @@
++from pathlib import Path as FilesystemPath
++from tempfile import TemporaryDirectory
++from types import SimpleNamespace
++from unittest import TestCase, main
++from unittest.mock import Mock, patch
++
++from ugrd.base.core import autodetect_musl
++
++
++class TestGenerator(dict):
++    def __init__(self, library_paths):
++        super().__init__(library_paths=library_paths, musl_libc=True)
++        self.logger = Mock()
++
++    def __setitem__(self, key, value):
++        if key == "library_paths" and isinstance(value, str):
++            if value not in self[key]:
++                self[key].append(value)
++            return
++        super().__setitem__(key, value)
++
++
++class TestMusl(TestCase):
++    @patch("ugrd.base.core.uname")
++    @patch("ugrd.base.core.Path")
++    def test_musl_path_file_is_included(self, path_type, uname):
++        with TemporaryDirectory() as directory:
++            path_file = FilesystemPath(directory, "ld-musl-test.path")
++            path_file.touch()
++            path_type.return_value = path_file
++            uname.return_value = SimpleNamespace(machine="test")
++            generator = TestGenerator(["/custom/lib"])
++
++            autodetect_musl(generator)
++
++            self.assertEqual(generator["dependencies"], path_file)
++            self.assertEqual(generator["library_paths"], ["/custom/lib"])
++
++    @patch("ugrd.base.core.uname")
++    @patch("ugrd.base.core.Path")
++    def test_missing_musl_path_file_uses_fallback_paths(self, path_type, uname):
++        with TemporaryDirectory() as directory:
++            path_type.return_value = FilesystemPath(directory, "ld-musl-test.path")
++            uname.return_value = SimpleNamespace(machine="test")
++            generator = TestGenerator(["/custom/lib", "/lib"])
++
++            autodetect_musl(generator)
++
++            self.assertEqual(
++                generator["library_paths"], ["/custom/lib", "/lib", "/usr/lib"]
++            )
++            generator.logger.warning.assert_called_once()
++
++
++if __name__ == "__main__":
++    main()

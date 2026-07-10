@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build a gports template with the sibling cports checkout as the cbuild engine.
+# Expose gports templates to the sibling cports checkout for one cbuild command.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -13,16 +13,27 @@ usage() {
 }
 
 [ -x "$cports/cbuild" ] || {
-    echo "gbuild: cbuild not found at $cports (set CPORTS_DIR to its checkout)" >&2
+    echo "gbuild: cbuild not found at $cports (set CPORTS_DIR)" >&2
     exit 1
+}
+
+run_cbuild() {
+    "$cports/cbuild" \
+        --config "$config" \
+        --build-root "$root/bldroot" \
+        --repository-path "$root/packages" \
+        --stage-path "$root/pkgstage" \
+        --sources-path "$root/sources" \
+        "$@"
 }
 
 [ "$#" -gt 0 ] || usage 1
 case "$1" in
-    bootstrap)
-        exec "$cports/cbuild" --config "$config" --build-root "$root/bldroot" --repository-path "$root/packages" --stage-path "$root/pkgstage" --sources-path "$root/sources" bootstrap
-        ;;
     -h|--help|help) usage ;;
+    bootstrap)
+        run_cbuild bootstrap
+        exit
+        ;;
 esac
 
 [ "$#" -ge 2 ] || usage 1
@@ -41,29 +52,29 @@ case "$template" in
         ;;
 esac
 
-source_dir="$root/$template"
-[ -f "$source_dir/template.py" ] || {
-    echo "gbuild: missing $source_dir/template.py" >&2
+[ -f "$root/$template/template.py" ] || {
+    echo "gbuild: missing $root/$template/template.py" >&2
     exit 1
 }
 
 links=""
-for package_dir in "$root"/user/*; do
-    [ -f "$package_dir/template.py" ] || continue
-    link="$cports/user/${package_dir##*/}"
-    if [ -e "$link" ] || [ -L "$link" ]; then
-        echo "gbuild: $link already exists; choose a package name not used by cports" >&2
-        exit 1
-    fi
-    ln -s "$package_dir" "$link"
-    links="$links $link"
-done
-
 cleanup() {
-    for link in $links; do
-        rm -f "$link"
+    for package in $links; do
+        rm -f "$cports/user/$package"
     done
 }
 trap cleanup EXIT HUP INT TERM
 
-"$cports/cbuild" --config "$config" --build-root "$root/bldroot" --repository-path "$root/packages" --stage-path "$root/pkgstage" --sources-path "$root/sources" "$command" "$template" "$@"
+for package_dir in "$root"/user/*; do
+    [ -f "$package_dir/template.py" ] || continue
+    package=${package_dir##*/}
+    link="$cports/user/$package"
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        echo "gbuild: $link already exists; package name collides with cports" >&2
+        exit 1
+    fi
+    ln -s "$package_dir" "$link"
+    links="$links $package"
+done
+
+run_cbuild "$command" "$template" "$@"

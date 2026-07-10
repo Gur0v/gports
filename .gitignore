@@ -1,13 +1,19 @@
-# cbuild state and generated package repositories
-bldroot/
-cbuild_cache/
-packages/
-pkgstage/
-sources/
-etc/keys/
-etc/config.local.ini
+*~
+*.o
+__pycache__
+/bldroot*
+/cbuild_cache
+sources*
+packages*
+pkgstage*
+etc/keys
+etc/config.ini
+void-*.tar.xz
+bootstrap.*
+!bootstrap.sh
+!bootstrap.ini
 
-# Python tooling
 .ruff_cache/
-__pycache__/
-*.py[cod]
+
+# custom configs
+.nvim.lua

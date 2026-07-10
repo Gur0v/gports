@@ -1,0 +1,228 @@
+diff --git a/src/ugrd/base/base.py b/src/ugrd/base/base.py
+index f3cb25a..381be66 100644
+--- a/src/ugrd/base/base.py
++++ b/src/ugrd/base/base.py
+@@ -139,7 +139,7 @@ def do_switch_root(self) -> str:
+         exit 1
+     fi
+     switch_root_target=$(readvar SWITCH_ROOT_TARGET)
+-    if ! grep -q " ${switch_root_target} " /proc/mounts ; then
++    if ! is_mounted "$switch_root_target"; then
+         rd_fail "Root not found at: $switch_root_target"
+     fi
+     if [ -z "$(readvar init)" ]; then
+@@ -157,7 +157,7 @@ def do_switch_root(self) -> str:
+     einfo "Switching root to: $switch_root_target $init_target"
+     klog "[UGRD $(readvar VERSION)] Running init: $init_target"
+     einfo "Cleaning up /run/ugrd"
+-    edebug "$(rm -rfv /run/ugrd)"
++    rm -rf /run/ugrd
+     exec switch_root "$switch_root_target" "$init_target"
+     """
+ 
+@@ -243,9 +243,9 @@ def check_var(self) -> str:
+     value=$(readvar "$1")
+     if [ -z "$value" ]; then
+         cmdline=$(awk -F '--' '{print $1}' /proc/cmdline)  # Get everything before '--'
+-        if echo "$cmdline" | grep -qE "(^|\s)$1(\s|$)"; then
+-            return 0
+-        fi
++        for arg in $cmdline; do
++            [ "$arg" = "$1" ] && return 0
++        done
+         return 1
+     fi
+     if [ "$value" = "1" ]; then
+@@ -255,6 +255,17 @@ def check_var(self) -> str:
+     """
+ 
+ 
++def is_mounted(self) -> str:
++    """Returns success when the requested path is present in /proc/mounts."""
++    return r"""
++    [ -r /proc/mounts ] || return 1
++    while read -r _ mountpoint _; do
++        [ "$mountpoint" = "$1" ] && return 0
++    done < /proc/mounts
++    return 1
++    """
++
++
+ def wait_for_space(self) -> str:
+     """Returns a shell script that reads a single character from stdin.
+     If an argument is passed, use that as a timeout in seconds.
+diff --git a/src/ugrd/base/base.toml b/src/ugrd/base/base.toml
+index 8212644..cf12ebd 100644
+--- a/src/ugrd/base/base.toml
++++ b/src/ugrd/base/base.toml
+@@ -6,7 +6,7 @@ modules = [ "ugrd.base.core",
+ 	    "ugrd.fs.cpio",
+ 	    "ugrd.base.checks" ]
+ 
+-binaries = [ "awk", "bc", "dd", "grep", "ls", "cp", "cat", "setsid", "stty", "switch_root", "rm" ]
++binaries = [ "awk", "bc", "dd", "ls", "cp", "cat", "setsid", "stty", "switch_root", "rm" ]
+ 
+ paths = [ "etc", "root", "tmp" ]
+ 
+@@ -35,7 +35,7 @@ autodetect_init = true
+ "ugrd.base.base" = [ "do_switch_root" ]
+ 
+ [imports.functions]
+-"ugrd.base.base" = [ "check_var", "setvar", "readvar", "wait_for_space", "prompt_user", "retry",
++"ugrd.base.base" = [ "check_var", "is_mounted", "setvar", "readvar", "wait_for_space", "prompt_user", "retry",
+                      "klog", "rd_log", "edebug", "einfo", "ewarn", "eerror",
+ 		     "rd_fail", "rd_restart", "_find_init" ]
+ 
+diff --git a/src/ugrd/base/cmdline.py b/src/ugrd/base/cmdline.py
+index 8a0f2ae..f46f209 100644
+--- a/src/ugrd/base/cmdline.py
++++ b/src/ugrd/base/cmdline.py
+@@ -75,7 +75,11 @@ def parse_cmdline_bool(self) -> str:
+     """
+     return r"""
+     edebug "Parsing cmdline bool: $1"
+-    if grep -qE "(^|\s)$1(\s|$)" /proc/cmdline; then
++    found=0
++    for arg in $(cat /proc/cmdline); do
++        [ "$arg" = "$1" ] && found=1 && break
++    done
++    if [ "$found" -eq 1 ]; then
+         setvar "$1" 1
+         edebug "[$1] Got cmdline bool: 1"
+     else
+@@ -111,7 +115,12 @@ def parse_cmdline_str(self) -> str:
+         setvar "$1" "$val"
+     else
+         # If the variable is not set in the environment, check /proc/cmdline
+-        val=$(grep -oP "(?<=^|\s)$1=\K[^ ]+" /proc/cmdline)
++        val=
++        for arg in $(cat /proc/cmdline); do
++            case "$arg" in
++                "$1="*) val=${arg#*=}; break ;;
++            esac
++        done
+         if [ -n "$val" ]; then
+             edebug "[$1] Got cmdline string: ${val}"
+             setvar "$1" "$val"
+@@ -168,4 +177,3 @@ def check_proc_cmdline(self):
+         if search(rf"(?:^|\s){arg}(?=\s|=|$)", cmdline):
+             self.logger.warning(f"Detected deprecated cmdline arg: {c_(arg, 'red')}")
+             self.logger.warning("Please check the documentation for the updated usage.")
+-
+diff --git a/src/ugrd/base/debug.toml b/src/ugrd/base/debug.toml
+index 8522780..b0adcfe 100644
+--- a/src/ugrd/base/debug.toml
++++ b/src/ugrd/base/debug.toml
+@@ -1,4 +1,4 @@
+-binaries = ['cp', 'ln', 'mv', 'rm', 'find', 'grep', 'dmesg', 'chmod', 'sleep', 'touch']
++binaries = ['cp', 'ln', 'mv', 'rm', 'find', 'dmesg', 'chmod', 'sleep', 'touch']
+ dependencies = [ "/usr/share/terminfo/l/linux" ] # required by most editors
+ # EDITOR is determined at build time using (in order):
+ # 1. editor config parameter
+diff --git a/src/ugrd/fs/btrfs.py b/src/ugrd/fs/btrfs.py
+index cfe0248..0c81820 100644
+--- a/src/ugrd/fs/btrfs.py
++++ b/src/ugrd/fs/btrfs.py
+@@ -128,7 +128,8 @@ def select_subvol(self) -> str:
+         done
+ 
+         while true; do
+-            read -p "Select a subvolume (1-$((i-1))): " selection
++            printf "Select a subvolume (1-%s): " "$((i-1))"
++            read selection
+             if [ "$selection" -ge 1 ] 2>/dev/null && [ "$selection" -lt "$i" ]; then
+                 break
+             else
+diff --git a/src/ugrd/fs/mounts.py b/src/ugrd/fs/mounts.py
+index 81f0b7c..d02ba70 100644
+--- a/src/ugrd/fs/mounts.py
++++ b/src/ugrd/fs/mounts.py
+@@ -268,7 +268,7 @@ def _get_mount_str(self, mount: dict, pad=False, pad_size=44) -> str:
+ 
+ def _to_mount_cmd(self, mount: dict, mkdir=False) -> str:
+     """Prints the object as a mount command."""
+-    out = [f"if ! grep -qs {mount['destination']} /proc/mounts; then"]
++    out = [f"if ! is_mounted {mount['destination']}; then"]
+ 
+     if mkdir:
+         out += [f"    mkdir -p {mount['destination']} || rd_fail 'Failed to create mountpoint: {mount['destination']}'"]
+@@ -912,7 +912,7 @@ def _process_run_dirs_multi(self, run_dir: Union[str, Path]) -> None:
+ @contains("run_dirs")
+ def make_run_dirs(self) -> list[str]:
+     """Generates commands to create the run directories."""
+-    return ['edebug Creating run dir: "$(mkdir -pv %s)"' % run_dir for run_dir in self["run_dirs"]]
++    return ['edebug "Creating run dir: %s"; mkdir -p %s' % (run_dir, run_dir) for run_dir in self["run_dirs"]]
+ 
+ 
+ @contains("late_mounts", "Skipping late mounts, late_mounts is empty.")
+@@ -1029,7 +1029,7 @@ def mount_default_root(self) -> str:
+     mount_type=$(readvar MOUNTS_ROOT_TYPE auto)
+     mount_options="$(readvar MOUNTS_ROOT_OPTIONS 'defaults,ro')$(readvar root_extra_options)"
+     mount_target=$(readvar MOUNTS_ROOT_TARGET)
+-    if grep -qs "$mount_target" /proc/mounts; then
++    if is_mounted "$mount_target"; then
+         ewarn "Root mount already exists, adding 'remount' option: $mount_options"
+         mount_options="remount,$mount_options"
+     fi
+diff --git a/src/ugrd/fs/resume.py b/src/ugrd/fs/resume.py
+index 921c871..a7894f0 100644
+--- a/src/ugrd/fs/resume.py
++++ b/src/ugrd/fs/resume.py
+@@ -27,11 +27,10 @@ _GET_RESUME_DEVICE = [
+     "resumeval=$(readvar resume)",  # read the cmdline resume var
+     # Check if resume= is set, if not print a message and skip resuming
+     '[ -n "$resumeval" ] || { ewarn "No resume device specified: resume= kernel parameter not set"; return 1; }',
+-    'if printf "%s" "$resumeval" | grep -q =; then',  # Check if resume= value contains an "="
+-    '    resume="$(blkid -t "$resumeval" -o device)"',  # Attempt to resolve the resume device using blkid
+-    'elif [ -e "$resumeval" ]; then',  # If it doesn't contain an "=", check if the specified resume= value is a valid path
+-    '    resume="$resumeval"',  # If it is, use the resume= value
+-    "fi",
++    'case "$resumeval" in',
++    '*=*) resume="$(blkid -t "$resumeval" -o device)" ;;',
++    '*) [ -e "$resumeval" ] && resume="$resumeval" ;;',
++    "esac",
+ ]
+ 
+ 
+diff --git a/src/ugrd/net/static.py b/src/ugrd/net/static.py
+index 07528c6..0d2bd96 100644
+--- a/src/ugrd/net/static.py
++++ b/src/ugrd/net/static.py
+@@ -52,7 +52,8 @@ def init_net(self) -> str:
+     """
+     return f"""
+     net_device=$(resolve_mac {self.net_device_mac})
+-    if ip link show "$net_device" | grep -q 'UP,' && ip route show | grep -q "default via .* dev $net_device"; then
++    if ip link show "$net_device" | awk '/UP,/ {{ found = 1 }} END {{ exit !found }}' &&
++       ip route show | awk -v dev="$net_device" '$1 == "default" && $0 ~ (" dev " dev "( |$)") {{ found = 1 }} END {{ exit !found }}'; then
+         ewarn "Network device is already up, skipping: $net_device"
+         return
+     fi
+diff --git a/tmp/ugrd-audit/tests/test_portability.py b/tests/test_portability.py
+new file mode 100644
+index 0000000..46a30d0
+--- /dev/null
++++ b/tests/test_portability.py
+@@ -0,0 +1,22 @@
++from pathlib import Path
++
++
++root = Path(__file__).parents[1] / "src" / "ugrd"
++source = "\n".join(
++    path.read_text() for path in root.rglob("*") if path.suffix in {".py", ".toml"}
++)
++
++assert "ggrep" not in source
++assert '"grep"' not in source
++assert "'grep'" not in source
++assert "grep -" not in source
++assert "rm -rfv" not in source
++assert "mkdir -pv" not in source
++assert "read -p" not in source
++assert "[ -r /proc/mounts ] || return 1" in source
++
++input_source = (root / "kmod/input.py").read_text()
++usb_config = (root / "kmod/usb.toml").read_text()
++assert "input_dev.resolve().parts" in input_source
++assert "'usbhid'" in usb_config
++assert "'hid_generic'" in usb_config

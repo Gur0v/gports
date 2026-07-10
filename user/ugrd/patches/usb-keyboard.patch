@@ -1,0 +1,21 @@
+diff --git a/src/ugrd/kmod/input.py b/src/ugrd/kmod/input.py
+index c7085aa..2dc5d62 100644
+--- a/src/ugrd/kmod/input.py
++++ b/src/ugrd/kmod/input.py
+@@ -57,7 +57,7 @@ def autodetect_input(self):
+                 continue
+ 
+             # Check for USB devices if the USB module is not already enabled
+-            for part in input_dev.parts:
++            for part in input_dev.resolve().parts:
+                 if part.startswith("usb") and "ugrd.kmod.usb" not in self["modules"]:
+                     self.logger.info(f"Detected USB device, enabling ugrd.kmod.usb: {c_(input_dev.name, 'cyan')}")
+                     self["modules"] = "ugrd.kmod.usb"
+diff --git a/src/ugrd/kmod/usb.toml b/src/ugrd/kmod/usb.toml
+index 3f72faa..b5e3558 100644
+--- a/src/ugrd/kmod/usb.toml
++++ b/src/ugrd/kmod/usb.toml
+@@ -1,2 +1,2 @@
+ kmod_init = ['uas', 'usbcore']
+-kmod_init_optional = ['ehci_hcd', 'ohci_hcd', 'uhci_hcd', 'xhci_hcd']
++kmod_init_optional = ['ehci_hcd', 'ohci_hcd', 'uhci_hcd', 'xhci_hcd', 'usbhid', 'hid_generic']
