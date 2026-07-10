@@ -1,14 +1,14 @@
 # gports
 
-`gports` is an independent collection of Chimera Linux package templates. It
-uses a nearby clone of [cports](https://github.com/chimera-linux/cports) as the
-build engine and dependency tree; only templates and generated artifacts owned
-by this collection live here.
+`gports` is a personal Chimera Linux ports collection. It contains package
+templates and uses a nearby checkout of
+[cports](https://github.com/chimera-linux/cports) as the cbuild engine and the
+upstream dependency tree. It does not fork or duplicate cports.
 
-## Prerequisites
+## Requirements
 
-You need a Chimera system (or a supported cbuild host), `git`, and a sibling
-`cports` checkout:
+Use Chimera Linux with `git`, `cports`, and `ruff` installed. By default the
+checkouts must be siblings:
 
 ```text
 Projects/
@@ -16,54 +16,83 @@ Projects/
 └── gports/
 ```
 
-If cports is elsewhere, set `CPORTS_DIR` before invoking `gbuild`.
+Set `CPORTS_DIR=/path/to/cports` if the cports checkout is elsewhere.
 
-## Quick start
+## First-time setup
 
-The included package proves the wiring without downloading or compiling
-anything:
+1. Set your name in `etc/config.ini` and configure an **absolute** signing-key
+   path, for example:
 
-```sh
-./gbuild lint user/gports-bootstrap
-./gbuild pkg user/gports-bootstrap
-```
+   ```ini
+   [build]
+   maintainer = Your Name <you@example.org>
 
-Generate a signing key before distributing packages. Set an **absolute** key
-path in `etc/config.ini`, for example
-`key = /home/you/Projects/gports/etc/keys/gports.rsa`, then run
-`$CPORTS_DIR/cbuild --config "$PWD/etc/config.ini" keygen`. The `etc/keys/`
-directory is ignored by Git. Copy only its `.pub` file to `/etc/apk/keys/` on
-machines that will consume your repository.
-
-## Add a real package
-
-1. Copy `templates/template.py.example` into `user/<name>/template.py`.
-2. Set accurate metadata, build dependencies, source URL, and SHA-256.
-3. Run `./gbuild prepare-upgrade user/<name>` to fetch sources and update the
-   checksum, then review the template change.
-4. Run `./gbuild lint user/<name>` and `./gbuild pkg user/<name>`.
-5. Install the result from `packages/user`:
-
-   ```sh
-   printf '%s\n' '@gports /absolute/path/to/gports/packages/user' \
-       | sudo tee /etc/apk/repositories.d/gports.list
-   sudo install -m 0644 etc/keys/*.pub /etc/apk/keys/
-   apk add <name>@gports
+   [signing]
+   key = /home/you/Projects/gports/etc/keys/gports.rsa
    ```
 
-`gbuild` temporarily creates a symlink in the cports `user/` directory while a
-command runs. It removes it on exit. A gports package name must therefore not
-collide with an existing `cports/user` package.
+2. Generate the key using cbuild:
 
-## Layout
+   ```sh
+   ../cports/cbuild --config "$PWD/etc/config.ini" keygen
+   ```
 
-```text
-user/<name>/template.py  package definition
-user/<name>/files/       extra installed files
-user/<name>/patches/     source patches
-templates/               copyable starting points
-packages/                generated APK repository (ignored)
+   The private key remains in `etc/keys/` and is ignored by Git. To trust
+   packages built by this repository locally:
+
+   ```sh
+   doas mkdir -p /etc/apk/keys
+   doas install -m 0644 etc/keys/gports.rsa.pub /etc/apk/keys/
+   ```
+
+3. Bootstrap the local cbuild root once:
+
+   ```sh
+   ./gbuild bootstrap
+   ```
+
+## Build a port
+
+`gbuild` temporarily exposes every `gports/user/*` template to cports, so
+packages in this repository can depend on one another. Package names must not
+collide with `cports/user` package names.
+
+```sh
+./gbuild lint user/ugrd
+./gbuild pkg user/ugrd
 ```
 
-For build styles, package fields, and helper APIs, consult the matching version
-of `cports/Packaging.md`; `cports/Usage.md` documents every cbuild command.
+The `ugrd` port builds `python-zenlib` and `python-pycpio` automatically. Built
+APKs are placed below `packages/user/<architecture>/`.
+
+Templates follow cports' 80-column Ruff/Black rules. Check them before a build:
+
+```sh
+ruff check user/
+ruff format --check user/
+```
+
+## Install local packages
+
+```sh
+printf '%s\n' '@gports /absolute/path/to/gports/packages/user' \
+    | doas tee /etc/apk/repositories.d/gports.list
+apk add ugrd@gports
+```
+
+## Add a port
+
+1. Copy `templates/template.py.example` to `user/<name>/template.py`.
+2. Fill in metadata, dependencies, source URL, and SHA-256.
+3. Run `./gbuild lint user/<name>` then `./gbuild pkg user/<name>`.
+
+`cports/Packaging.md` is the package-template API reference; `cports/Usage.md`
+documents cbuild commands and behavior.
+
+## Included ports
+
+- `ugrd` — µgRD 2.2.0; installs its default `/etc/ugrd/config.toml` and shell
+  completions. Its privileged upstream test suite is intentionally disabled.
+- `python-zenlib` and `python-pycpio` — ugRD's runtime dependencies.
+
+See `user/ugrd/README.md` for Chimera-specific ugRD usage notes.

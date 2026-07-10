@@ -8,6 +8,7 @@ config="$root/etc/config.ini"
 
 usage() {
     echo "usage: $0 <cbuild-command> user/<package> [cbuild options]" >&2
+    echo "       $0 bootstrap" >&2
     exit "${1:-0}"
 }
 
@@ -18,7 +19,11 @@ usage() {
 
 [ "$#" -gt 0 ] || usage 1
 case "$1" in
-    -h|--help|help) usage ;;esac
+    bootstrap)
+        exec "$cports/cbuild" --config "$config" --build-root "$root/bldroot" --repository-path "$root/packages" --stage-path "$root/pkgstage" --sources-path "$root/sources" bootstrap
+        ;;
+    -h|--help|help) usage ;;
+esac
 
 [ "$#" -ge 2 ] || usage 1
 command=$1
@@ -37,19 +42,28 @@ case "$template" in
 esac
 
 source_dir="$root/$template"
-link="$cports/$template"
 [ -f "$source_dir/template.py" ] || {
     echo "gbuild: missing $source_dir/template.py" >&2
     exit 1
 }
 
-if [ -e "$link" ] || [ -L "$link" ]; then
-    echo "gbuild: $link already exists; choose a package name not used by cports" >&2
-    exit 1
-fi
+links=""
+for package_dir in "$root"/user/*; do
+    [ -f "$package_dir/template.py" ] || continue
+    link="$cports/user/${package_dir##*/}"
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        echo "gbuild: $link already exists; choose a package name not used by cports" >&2
+        exit 1
+    fi
+    ln -s "$package_dir" "$link"
+    links="$links $link"
+done
 
-cleanup() { rm -f "$link"; }
+cleanup() {
+    for link in $links; do
+        rm -f "$link"
+    done
+}
 trap cleanup EXIT HUP INT TERM
-ln -s "$source_dir" "$link"
 
 "$cports/cbuild" --config "$config" --build-root "$root/bldroot" --repository-path "$root/packages" --stage-path "$root/pkgstage" --sources-path "$root/sources" "$command" "$template" "$@"

@@ -8,5 +8,6 @@ etc/keys/
 etc/config.local.ini
 
 # Python tooling
+.ruff_cache/
 __pycache__/
 *.py[cod]
