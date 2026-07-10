@@ -1,0 +1,12 @@
+# cbuild state and generated package repositories
+bldroot/
+cbuild_cache/
+packages/
+pkgstage/
+sources/
+etc/keys/
+etc/config.local.ini
+
+# Python tooling
+__pycache__/
+*.py[cod]

@@ -1,0 +1,55 @@
+#!/bin/sh
+# Build a gports template with the sibling cports checkout as the cbuild engine.
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cports=${CPORTS_DIR:-"$root/../cports"}
+config="$root/etc/config.ini"
+
+usage() {
+    echo "usage: $0 <cbuild-command> user/<package> [cbuild options]" >&2
+    exit "${1:-0}"
+}
+
+[ -x "$cports/cbuild" ] || {
+    echo "gbuild: cbuild not found at $cports (set CPORTS_DIR to its checkout)" >&2
+    exit 1
+}
+
+[ "$#" -gt 0 ] || usage 1
+case "$1" in
+    -h|--help|help) usage ;;esac
+
+[ "$#" -ge 2 ] || usage 1
+command=$1
+template=$2
+shift 2
+
+case "$template" in
+    user/*)
+        package=${template#user/}
+        [ -n "$package" ] && [ "$package" = "${package#*/}" ] || usage 1
+        ;;
+    *)
+        echo "gbuild: templates must be addressed as user/<package>" >&2
+        exit 1
+        ;;
+esac
+
+source_dir="$root/$template"
+link="$cports/$template"
+[ -f "$source_dir/template.py" ] || {
+    echo "gbuild: missing $source_dir/template.py" >&2
+    exit 1
+}
+
+if [ -e "$link" ] || [ -L "$link" ]; then
+    echo "gbuild: $link already exists; choose a package name not used by cports" >&2
+    exit 1
+fi
+
+cleanup() { rm -f "$link"; }
+trap cleanup EXIT HUP INT TERM
+ln -s "$source_dir" "$link"
+
+"$cports/cbuild" --config "$config" --build-root "$root/bldroot" --repository-path "$root/packages" --stage-path "$root/pkgstage" --sources-path "$root/sources" "$command" "$template" "$@"
