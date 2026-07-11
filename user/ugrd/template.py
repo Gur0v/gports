@@ -1,6 +1,6 @@
 pkgname = "ugrd"
 pkgver = "2.2.0"
-pkgrel = 1
+pkgrel = 2
 build_style = "python_pep517"
 hostmakedepends = ["python-build", "python-installer", "python-setuptools"]
 checkdepends = ["python-installer", "python-pycpio", "python-zenlib"]
@@ -38,7 +38,8 @@ def check(self):
     whl = [str(p.relative_to(self.cwd)) for p in self.cwd.glob("dist/*.whl")]
     self.do(envpy, "-m", "installer", *whl)
     self.do(envpy, "tests/test_musl.py", path=[envpy.parent])
-    self.do("python3", "tests/test_portability.py")
+    self.do("python3", "tests/test_posix_shell.py")
+    self.do("python3", "tests/test_usb_keyboard.py")
 
 
 def post_install(self):

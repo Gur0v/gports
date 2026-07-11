@@ -27,9 +27,9 @@ index f3cb25a..381be66 100644
 -        if echo "$cmdline" | grep -qE "(^|\s)$1(\s|$)"; then
 -            return 0
 -        fi
-+        for arg in $cmdline; do
-+            [ "$arg" = "$1" ] && return 0
-+        done
++        if printf "%s\n" "$cmdline" | awk -v key="$1" '{ for (i = 1; i <= NF; i++) if ($i == key) found = 1 } END { exit !found }'; then
++            return 0
++        fi
          return 1
      fi
      if [ "$value" = "1" ]; then
@@ -77,34 +77,25 @@ diff --git a/src/ugrd/base/cmdline.py b/src/ugrd/base/cmdline.py
 index 8a0f2ae..f46f209 100644
 --- a/src/ugrd/base/cmdline.py
 +++ b/src/ugrd/base/cmdline.py
-@@ -75,7 +75,11 @@ def parse_cmdline_bool(self) -> str:
+@@ -75,7 +75,7 @@ def parse_cmdline_bool(self) -> str:
      """
      return r"""
      edebug "Parsing cmdline bool: $1"
 -    if grep -qE "(^|\s)$1(\s|$)" /proc/cmdline; then
-+    found=0
-+    for arg in $(cat /proc/cmdline); do
-+        [ "$arg" = "$1" ] && found=1 && break
-+    done
-+    if [ "$found" -eq 1 ]; then
++    if awk -v key="$1" '{ for (i = 1; i <= NF; i++) if ($i == key) found = 1 } END { exit !found }' /proc/cmdline; then
          setvar "$1" 1
          edebug "[$1] Got cmdline bool: 1"
      else
-@@ -111,7 +115,12 @@ def parse_cmdline_str(self) -> str:
+@@ -111,7 +111,7 @@ def parse_cmdline_str(self) -> str:
          setvar "$1" "$val"
      else
          # If the variable is not set in the environment, check /proc/cmdline
 -        val=$(grep -oP "(?<=^|\s)$1=\K[^ ]+" /proc/cmdline)
-+        val=
-+        for arg in $(cat /proc/cmdline); do
-+            case "$arg" in
-+                "$1="*) val=${arg#*=}; break ;;
-+            esac
-+        done
++        val=$(awk -v key="$1" '{ for (i = 1; i <= NF; i++) if (index($i, key "=") == 1) { print substr($i, length(key) + 2); exit } }' /proc/cmdline)
          if [ -n "$val" ]; then
              edebug "[$1] Got cmdline string: ${val}"
              setvar "$1" "$val"
-@@ -168,4 +177,3 @@ def check_proc_cmdline(self):
+@@ -168,4 +168,3 @@ def check_proc_cmdline(self):
          if search(rf"(?:^|\s){arg}(?=\s|=|$)", cmdline):
              self.logger.warning(f"Detected deprecated cmdline arg: {c_(arg, 'red')}")
              self.logger.warning("Please check the documentation for the updated usage.")
@@ -129,7 +120,7 @@ index cfe0248..0c81820 100644
          while true; do
 -            read -p "Select a subvolume (1-$((i-1))): " selection
 +            printf "Select a subvolume (1-%s): " "$((i-1))"
-+            read selection
++            IFS= read -r selection
              if [ "$selection" -ge 1 ] 2>/dev/null && [ "$selection" -lt "$i" ]; then
                  break
              else
@@ -194,16 +185,16 @@ index 07528c6..0d2bd96 100644
      net_device=$(resolve_mac {self.net_device_mac})
 -    if ip link show "$net_device" | grep -q 'UP,' && ip route show | grep -q "default via .* dev $net_device"; then
 +    if ip link show "$net_device" | awk '/UP,/ {{ found = 1 }} END {{ exit !found }}' &&
-+       ip route show | awk -v dev="$net_device" '$1 == "default" && $0 ~ (" dev " dev "( |$)") {{ found = 1 }} END {{ exit !found }}'; then
++       ip route show | awk -v dev="$net_device" '$1 == "default" {{ for (i = 2; i < NF; i++) if ($i == "dev" && $(i + 1) == dev) found = 1 }} END {{ exit !found }}'; then
          ewarn "Network device is already up, skipping: $net_device"
          return
      fi
-diff --git a/tmp/ugrd-audit/tests/test_portability.py b/tests/test_portability.py
+diff --git a/tests/test_posix_shell.py b/tests/test_posix_shell.py
 new file mode 100644
 index 0000000..46a30d0
 --- /dev/null
-+++ b/tests/test_portability.py
-@@ -0,0 +1,22 @@
++++ b/tests/test_posix_shell.py
+@@ -0,0 +1,15 @@
 +from pathlib import Path
 +
 +
@@ -212,17 +203,21 @@ index 0000000..46a30d0
 +    path.read_text() for path in root.rglob("*") if path.suffix in {".py", ".toml"}
 +)
 +
-+assert "ggrep" not in source
-+assert '"grep"' not in source
-+assert "'grep'" not in source
-+assert "grep -" not in source
++assert "grep" not in source
++assert '== "$1"' not in source
++assert "for arg in $(cat /proc/cmdline)" not in source
 +assert "rm -rfv" not in source
 +assert "mkdir -pv" not in source
 +assert "read -p" not in source
 +assert "[ -r /proc/mounts ] || return 1" in source
-+
-+input_source = (root / "kmod/input.py").read_text()
-+usb_config = (root / "kmod/usb.toml").read_text()
-+assert "input_dev.resolve().parts" in input_source
-+assert "'usbhid'" in usb_config
-+assert "'hid_generic'" in usb_config
+diff --git a/src/ugrd/net/net.py b/src/ugrd/net/net.py
+--- a/src/ugrd/net/net.py
++++ b/src/ugrd/net/net.py
+@@ -69,6 +69,6 @@ def resolve_mac(self):
+     return """
+     for dev in /sys/class/net/*; do
+-        if [ "$(cat $dev/address)" == "$1" ]; then
++        if [ "$(cat "$dev/address")" = "$1" ]; then
+             printf "%s" "${dev##*/}"
+             return
+         fi

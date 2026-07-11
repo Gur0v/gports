@@ -1,0 +1,14 @@
+--- a/examples/example.toml
++++ b/examples/example.toml
+@@ -54,8 +54,9 @@
+ # ugrd is designed for merged-usr systems. If using a split-usr system, automatic symlink creation can be disabled:
+ #merge_usr = false
+ 
+-# on systems using glibc in the userspace, libgcc is often required. If it's not necessary, pulling it can be diabled with:
+-#find_libgcc = false
++# Chimera Linux uses musl, so libgcc autodetection and ld.so.cache generation are disabled.
++find_libgcc = false
++musl_libc = true
+ 
+ # By default, ugrd will keep retrying to mount base mounts and the rootfs, unless space is pressed
+ # The default timeout between attempts is 1s, and the default number of retries is infinite

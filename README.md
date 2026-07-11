@@ -1,10 +1,13 @@
 # gports
 
-`gports` is a small personal package collection for Chimera Linux. The sibling [cports](https://github.com/chimera-linux/cports) checkout remains the build system, dependency tree, and authoritative source for packaging policy. This repository holds only packages that are not in cports, or that need a local, narrowly scoped change.
+Personal Chimera Linux packages built with an adjacent
+[cports](https://github.com/chimera-linux/cports) checkout. Packaging policy,
+tools, dependencies, and documentation come from cports; this repository keeps
+only packages absent there or requiring a narrow local patch.
 
 ## Setup
 
-Keep the repositories beside each other, or set `CPORTS_DIR` to the cports checkout:
+Keep both repositories beside each other, or set `CPORTS_DIR`:
 
 ```text
 Projects/
@@ -12,12 +15,13 @@ Projects/
 └── gports/
 ```
 
-The tracked `etc/config.ini.example` and `pyproject.toml` are copied unchanged from cports. Create the ignored personal configuration and change only local values such as `maintainer` and the signing key:
+Create the ignored local configuration from cports, then set your maintainer and
+signing key:
 
 ```sh
-cp etc/config.ini.example etc/config.ini
+cp "${CPORTS_DIR:-../cports}/etc/config.ini.example" etc/config.ini
 $EDITOR etc/config.ini
-../cports/cbuild --config "$PWD/etc/config.ini" keygen
+"${CPORTS_DIR:-../cports}/cbuild" --config "$PWD/etc/config.ini" keygen
 ./gbuild bootstrap
 ```
 
@@ -30,14 +34,15 @@ doas install -m 0644 etc/keys/gports.rsa.pub /etc/apk/keys/
 
 ## Build
 
-cbuild does not support external collections directly. `gbuild` is a thin bridge: it exposes all gports templates under cports' `user` category for one command, then removes the links. Package names therefore cannot collide with `cports/user`.
+`gbuild` exposes these templates to cports' `user` category for one command.
+Package names cannot collide with `cports/user`.
 
 ```sh
 ./gbuild lint user/ugrd
 ./gbuild pkg user/ugrd
 ```
 
-All template fields, patch handling, checks, repositories, and dependencies come from cbuild. Refer to `../cports/Usage.md` and `../cports/Packaging.md`; gports intentionally does not duplicate those docs.
+See cports' `Usage.md` and `Packaging.md` for everything else.
 
 ## Install
 
