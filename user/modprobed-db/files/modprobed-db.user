@@ -1,0 +1,3 @@
+type = scripted
+command = /usr/bin/modprobed-db storesilent
+log-type = buffer
