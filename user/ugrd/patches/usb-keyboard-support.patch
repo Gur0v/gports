@@ -18,7 +18,7 @@ index 3f72faa..b5e3558 100644
 @@ -1,2 +1,2 @@
  kmod_init = ['uas', 'usbcore']
 -kmod_init_optional = ['ehci_hcd', 'ohci_hcd', 'uhci_hcd', 'xhci_hcd']
-+kmod_init_optional = ['ehci_hcd', 'ohci_hcd', 'uhci_hcd', 'xhci_hcd', 'usbhid']
++kmod_init_optional = ['ehci_hcd', 'ohci_hcd', 'uhci_hcd', 'xhci_hcd', 'usbhid', 'hid_generic']
 diff --git a/tests/test_usb_keyboard.py b/tests/test_usb_keyboard.py
 new file mode 100644
 --- /dev/null
@@ -32,3 +32,4 @@ new file mode 100644
 +usb_config = (root / "usb.toml").read_text()
 +assert "input_dev.resolve().parts" in input_source
 +assert "'usbhid'" in usb_config
++assert "'hid_generic'" in usb_config

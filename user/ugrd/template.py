@@ -1,6 +1,6 @@
 pkgname = "ugrd"
 pkgver = "2.2.0"
-pkgrel = 2
+pkgrel = 3
 build_style = "python_pep517"
 hostmakedepends = ["python-build", "python-installer", "python-setuptools"]
 checkdepends = ["python-installer", "python-pycpio", "python-zenlib"]
